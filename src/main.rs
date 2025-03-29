@@ -6,12 +6,16 @@ use axum::{
 };
 use rmcp::model::{ClientJsonRpcMessage, ClientRequest, JsonRpcMessage};
 use serde_json::json;
-use std::sync::Arc;
 use tracing_subscriber::{
     layer::SubscriberExt,
     util::SubscriberInitExt,
     {self},
 };
+// Import the Counter from common module
+use crate::common::counter::Counter;
+
+// Add common module
+mod common;
 
 const BIND_ADDRESS: &str = "127.0.0.1:10086";
 
@@ -31,12 +35,12 @@ async fn main() -> anyhow::Result<()> {
         )
         .init();
 
-    // Create HTTP server that doesn't depend on SSE
-    let counter_service = CounterService::new();
+    // Create HTTP server using Counter instead of CounterService
+    let counter = Counter::new();
     let app = Router::new()
         .route("/api/counter", post(http_counter_handler))
         .route("/api/counter", get(http_counter_get))
-        .with_state(counter_service);
+        .with_state(counter);
 
     let tcp_listener = tokio::net::TcpListener::bind(BIND_ADDRESS).await?;
     tracing::info!("Starting HTTP API server on {}", BIND_ADDRESS);
@@ -54,46 +58,28 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-// A standalone service that doesn't depend on SSE
-#[derive(Clone)]
-struct CounterService {
-    counter: Arc<tokio::sync::Mutex<i32>>,
-}
-
-impl CounterService {
-    fn new() -> Self {
-        Self {
-            counter: Arc::new(tokio::sync::Mutex::new(0)),
-        }
-    }
-
-    async fn increment(&self) -> i32 {
-        let mut counter = self.counter.lock().await;
-        *counter += 1;
-        *counter
-    }
-
-    async fn decrement(&self) -> i32 {
-        let mut counter = self.counter.lock().await;
-        *counter -= 1;
-        *counter
-    }
-
-    async fn get_value(&self) -> i32 {
-        let counter = self.counter.lock().await;
-        *counter
-    }
-}
-
 // Simple GET endpoint to retrieve counter value
-async fn http_counter_get(State(service): State<CounterService>) -> Json<serde_json::Value> {
-    let value = service.get_value().await;
-    Json(json!({ "value": value }))
+async fn http_counter_get(State(counter): State<Counter>) -> Json<serde_json::Value> {
+    // Call the Counter's get_value method and extract text content
+    let result = counter.get_value().await.unwrap();
+
+    // Extract the content as a string and parse it as an integer
+    let content = if let Some(content) = result.content.first() {
+        if let Some(text) = content.as_text() {
+            text.text.parse::<i32>().unwrap_or(0)
+        } else {
+            0
+        }
+    } else {
+        0
+    };
+
+    Json(json!({ "value": content }))
 }
 
 // HTTP handler that doesn't require SSE session
 async fn http_counter_handler(
-    State(service): State<CounterService>,
+    State(counter): State<Counter>,
     Json(message): Json<ClientJsonRpcMessage>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     // Create a span for tracking context with source file and line information
@@ -126,15 +112,57 @@ async fn http_counter_handler(
 
                             let result = match op_name_str {
                                 "increment" => {
-                                    let new_value = service.increment().await;
-                                    json!({ "value": new_value })
+                                    let call_result = counter.increment().await.map_err(|e| {
+                                        (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+                                    })?;
+
+                                    // Extract content properly
+                                    let value = if let Some(content) = call_result.content.first() {
+                                        if let Some(text) = content.as_text() {
+                                            text.text.parse::<i32>().unwrap_or(0)
+                                        } else {
+                                            0
+                                        }
+                                    } else {
+                                        0
+                                    };
+
+                                    json!({ "value": value })
                                 }
                                 "decrement" => {
-                                    let new_value = service.decrement().await;
-                                    json!({ "value": new_value })
+                                    let call_result = counter.decrement().await.map_err(|e| {
+                                        (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+                                    })?;
+
+                                    // Extract content properly
+                                    let value = if let Some(content) = call_result.content.first() {
+                                        if let Some(text) = content.as_text() {
+                                            text.text.parse::<i32>().unwrap_or(0)
+                                        } else {
+                                            0
+                                        }
+                                    } else {
+                                        0
+                                    };
+
+                                    json!({ "value": value })
                                 }
                                 "get_value" => {
-                                    let value = service.get_value().await;
+                                    let call_result = counter.get_value().await.map_err(|e| {
+                                        (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+                                    })?;
+
+                                    // Extract content properly
+                                    let value = if let Some(content) = call_result.content.first() {
+                                        if let Some(text) = content.as_text() {
+                                            text.text.parse::<i32>().unwrap_or(0)
+                                        } else {
+                                            0
+                                        }
+                                    } else {
+                                        0
+                                    };
+
                                     json!({ "value": value })
                                 }
                                 _ => {

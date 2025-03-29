@@ -30,7 +30,7 @@ impl Counter {
     }
 
     #[tool(description = "Increment the counter by 1")]
-    async fn increment(&self) -> Result<CallToolResult, McpError> {
+    pub async fn increment(&self) -> Result<CallToolResult, McpError> {
         let mut counter = self.counter.lock().await;
         *counter += 1;
         Ok(CallToolResult::success(vec![Content::text(
@@ -39,7 +39,7 @@ impl Counter {
     }
 
     #[tool(description = "Decrement the counter by 1")]
-    async fn decrement(&self) -> Result<CallToolResult, McpError> {
+    pub async fn decrement(&self) -> Result<CallToolResult, McpError> {
         let mut counter = self.counter.lock().await;
         *counter -= 1;
         Ok(CallToolResult::success(vec![Content::text(
@@ -48,9 +48,8 @@ impl Counter {
     }
 
     #[tool(description = "Get the current counter value")]
-    async fn get_value(&self) -> Result<CallToolResult, McpError> {
-        let mut counter = self.counter.lock().await;
-        *counter -= 1;
+    pub async fn get_value(&self) -> Result<CallToolResult, McpError> {
+        let counter = self.counter.lock().await;
         Ok(CallToolResult::success(vec![Content::text(
             counter.to_string(),
         )]))
