@@ -1,6 +1,5 @@
 use axum::{
     Json, Router,
-    body::Body,
     extract::State,
     http::StatusCode,
     routing::{get, post},
@@ -18,12 +17,18 @@ const BIND_ADDRESS: &str = "127.0.0.1:10086";
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
+    // Configure logging with source code information
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| "debug".to_string().into()),
         )
-        .with(tracing_subscriber::fmt::layer())
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_file(true) // Show filename
+                .with_line_number(true) // Show line number
+                .with_target(true), // Show target module
+        )
         .init();
 
     // Create HTTP server that doesn't depend on SSE
@@ -36,7 +41,7 @@ async fn main() -> anyhow::Result<()> {
     let tcp_listener = tokio::net::TcpListener::bind(BIND_ADDRESS).await?;
     tracing::info!("Starting HTTP API server on {}", BIND_ADDRESS);
     tracing::info!(
-        "POST example: curl -X POST http://127.0.0.1:10086/api/counter -H \"Content-Type: application/json\" -d '{{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"call_tool\",\"params\":{{\"name\":\"increment\"}}}}'"
+        "POST example: curl -X POST http://127.0.0.1:10086/api/counter -H \"Content-Type: application/json\" -d '{{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{{\"name\":\"counter\",\"arguments\":{{\"operation\":\"increment\"}}}}}}'"
     );
     tracing::info!("GET example: curl http://127.0.0.1:10086/api/counter");
 
@@ -89,84 +94,111 @@ async fn http_counter_get(State(service): State<CounterService>) -> Json<serde_j
 // HTTP handler that doesn't require SSE session
 async fn http_counter_handler(
     State(service): State<CounterService>,
-    // The request must follow JSON-RPC structure with format:
-    // {
-    //   "jsonrpc": "2.0",
-    //   "id": 1,
-    //   "method": "call_tool",
-    //   "params": { "name": "increment" }
-    // }
-    body: Body,
+    Json(message): Json<ClientJsonRpcMessage>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    // First try to extract the raw body as JSON
-    let bytes = match axum::body::to_bytes(body, usize::MAX).await {
-        Ok(bytes) => bytes,
-        Err(e) => {
-            return Err((
-                StatusCode::BAD_REQUEST,
-                format!("Failed to read request body: {}", e),
-            ));
-        }
-    };
+    // Create a span for tracking context with source file and line information
+    let span = tracing::info_span!("json_rpc_handler", file = file!(), line = line!());
+    let _guard = span.enter();
 
-    // Parse the JSON directly instead of trying to use complex types
-    let json_value: serde_json::Value = match serde_json::from_slice(&bytes) {
-        Ok(val) => val,
-        Err(e) => {
-            // Log the error and the received JSON for debugging
-            let json_str = String::from_utf8_lossy(&bytes);
-            tracing::error!("Failed to parse JSON: {}\nReceived JSON: {}", e, json_str);
-            return Err((StatusCode::BAD_REQUEST, "Invalid JSON format".to_string()));
-        }
-    };
+    // Process the message using rmcp types
+    match &message {
+        JsonRpcMessage::Request(req) => {
+            match &req.request {
+                ClientRequest::CallToolRequest(tool_req) => {
+                    match tool_req.params.name.as_ref() {
+                        "counter" => {
+                            // Get the operation from the arguments
+                            let op_name = tool_req
+                                .params
+                                .arguments
+                                .as_ref()
+                                .unwrap()
+                                .get("operation")
+                                .unwrap();
 
-    // Validate it's a JSON-RPC request
-    if json_value["jsonrpc"] != "2.0" || json_value["method"] != "call_tool" {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "Invalid JSON-RPC request. Expected jsonrpc=2.0 and method=call_tool".to_string(),
-        ));
-    }
+                            let op_name_str = op_name.as_str().unwrap();
+                            tracing::debug!(
+                                file = file!(),
+                                line = line!(),
+                                "op_name: {:?}",
+                                &op_name_str
+                            );
 
-    // Extract the tool name
-    let tool_name = match json_value["params"]["name"].as_str() {
-        Some(name) => name,
-        None => {
-            return Err((
-                StatusCode::BAD_REQUEST,
-                "Missing or invalid tool name in params".to_string(),
-            ));
-        }
-    };
+                            let result = match op_name_str {
+                                "increment" => {
+                                    let new_value = service.increment().await;
+                                    json!({ "value": new_value })
+                                }
+                                "decrement" => {
+                                    let new_value = service.decrement().await;
+                                    json!({ "value": new_value })
+                                }
+                                "get_value" => {
+                                    let value = service.get_value().await;
+                                    json!({ "value": value })
+                                }
+                                _ => {
+                                    tracing::error!(
+                                        file = file!(),
+                                        line = line!(),
+                                        "Invalid operation name: {}",
+                                        op_name_str
+                                    );
+                                    return Err((
+                                        StatusCode::BAD_REQUEST,
+                                        format!("Invalid operation name: {}", op_name_str),
+                                    ));
+                                }
+                            };
 
-    // Process based on tool name
-    let result = match tool_name {
-        "increment" => {
-            let new_value = service.increment().await;
-            json!({ "value": new_value })
-        }
-        "decrement" => {
-            let new_value = service.decrement().await;
-            json!({ "value": new_value })
-        }
-        "get_value" => {
-            let value = service.get_value().await;
-            json!({ "value": value })
+                            // Construct a proper JsonRpcResponse
+                            let response = json!({
+                                "jsonrpc": "2.0",
+                                "id": req.id,
+                                "result": result
+                            });
+
+                            return Ok(Json(response));
+                        }
+                        _ => {
+                            tracing::error!(
+                                file = file!(),
+                                line = line!(),
+                                "Invalid tool name: {}",
+                                tool_req.params.name.as_ref()
+                            );
+                            return Err((
+                                StatusCode::BAD_REQUEST,
+                                format!("Invalid tool name: {}", tool_req.params.name.as_ref()),
+                            ));
+                        }
+                    }
+                }
+                _ => {
+                    tracing::error!(
+                        file = file!(),
+                        line = line!(),
+                        "Expected CallToolRequest, got: {:?}",
+                        req.request
+                    );
+                    return Err((
+                        StatusCode::BAD_REQUEST,
+                        "Invalid request type. Expected call_tool request.".to_string(),
+                    ));
+                }
+            }
         }
         _ => {
+            tracing::error!(
+                file = file!(),
+                line = line!(),
+                "Expected Request, got: {:?}",
+                message
+            );
             return Err((
                 StatusCode::BAD_REQUEST,
-                format!("Invalid tool name: {}", tool_name),
+                "Invalid JSON-RPC message type. Expected a request.".to_string(),
             ));
         }
-    };
-
-    // Return JSON-RPC response with result
-    let response = json!({
-        "jsonrpc": "2.0",
-        "id": json_value["id"],
-        "result": result
-    });
-
-    Ok(Json(response))
+    }
 }
