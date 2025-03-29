@@ -58,60 +58,60 @@ curl -sSf https://raw.githubusercontent.com/WasmEdge/WasmEdge/master/utils/insta
 
   - Call "counter" tool to decrement the counter
 
-  ```bash
-  curl -X POST http://127.0.0.1:10086/api/counter \
-    --header "Content-Type: application/json" \
-    --data '{
-      "jsonrpc": "2.0",
-      "id": 5,
-      "method": "tools/call",
-      "params": {
-          "name": "counter",
-          "arguments": {
-              "operation": "decrement"
-          }
-      }
-  }'
-  ```
-
-  Response:
-
-  ```json
-  {
-    "id": 5,
-    "jsonrpc": "2.0",
-    "result": {
-        "value": 0
-    }
-  }
-  ```
-
-  - Call "counter" tool to get the counter value
-
-  ```bash
-  curl -X POST http://127.0.0.1:10086/api/counter \
-    --header "Content-Type: application/json" \
-    --data '{
+    ```bash
+    curl -X POST http://127.0.0.1:10086/api/counter \
+      --header "Content-Type: application/json" \
+      --data '{
         "jsonrpc": "2.0",
         "id": 5,
         "method": "tools/call",
         "params": {
             "name": "counter",
             "arguments": {
-                "operation": "get_value",
+                "operation": "decrement"
             }
         }
     }'
-  ```
+    ```
 
-  Response:
+    Response:
 
-  ```json
-  {
+    ```json
+    {
       "id": 5,
       "jsonrpc": "2.0",
       "result": {
           "value": 0
       }
-  }
+    }
+    ```
+
+  - Call "counter" tool to get the counter value
+
+    ```bash
+    curl -X POST http://127.0.0.1:10086/api/counter \
+      --header "Content-Type: application/json" \
+      --data '{
+          "jsonrpc": "2.0",
+          "id": 5,
+          "method": "tools/call",
+          "params": {
+              "name": "counter",
+              "arguments": {
+                  "operation": "get_value",
+              }
+          }
+      }'
+    ```
+
+    Response:
+
+    ```json
+    {
+        "id": 5,
+        "jsonrpc": "2.0",
+        "result": {
+            "value": 0
+        }
+    }
 
