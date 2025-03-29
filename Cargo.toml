@@ -4,11 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-rmcp = { version = "0.1.5", path = "/Volumes/Dev/secondstate/me/mcp-rust-sdk/crates/rmcp", features = [
+rmcp = { version = "0.1.5", features = [
     "server",
     "transport-sse-server",
     "transport-io",
-] }
+], git = "https://github.com/apepkuss/mcp-rust-sdk.git", branch = "main" }
 tokio = { version = "1", features = ["rt", "macros", "net", "time", "io-util"] }
 tokio-util = "0.7.13"
 serde = { version = "1.0", features = ["derive"] }
