@@ -26,19 +26,92 @@ curl -sSf https://raw.githubusercontent.com/WasmEdge/WasmEdge/master/utils/insta
 
 - Test the server
 
+  - Call "counter" tool to increment the counter
+
+    ```bash
+    curl -X POST http://localhost:10086/api/counter \
+      --header "Content-Type: application/json" \
+      --data '{
+          "jsonrpc": "2.0",
+          "id": 5,
+          "method": "tools/call",
+          "params": {
+              "name": "counter",
+              "arguments": {
+                  "operation": "increment"
+              }
+          }
+      }'
+    ```
+
+    Response:
+
+    ```json
+    {
+        "id": 5,
+        "jsonrpc": "2.0",
+        "result": {
+            "value": 1
+        }
+    }
+    ```
+
+  - Call "counter" tool to decrement the counter
+
   ```bash
-  # 增加计数器
   curl -X POST http://127.0.0.1:10086/api/counter \
-    -H "Content-Type: application/json" \
-    -d '{"jsonrpc":"2.0","id":1,"method":"call_tool","params":{"name":"increment"}}'
-
-  # 减少计数器
-  curl -X POST http://127.0.0.1:10086/api/counter \
-    -H "Content-Type: application/json" \
-    -d '{"jsonrpc":"2.0","id":1,"method":"call_tool","params":{"name":"decrement"}}'
-
-  # 获取计数器值
-  curl -X POST http://127.0.0.1:10086/api/counter \
-    -H "Content-Type: application/json" \
-    -d '{"jsonrpc":"2.0","id":1,"method":"call_tool","params":{"name":"get_value"}}'
+    --header "Content-Type: application/json" \
+    --data '{
+      "jsonrpc": "2.0",
+      "id": 5,
+      "method": "tools/call",
+      "params": {
+          "name": "counter",
+          "arguments": {
+              "operation": "decrement"
+          }
+      }
+  }'
   ```
+
+  Response:
+
+  ```json
+  {
+    "id": 5,
+    "jsonrpc": "2.0",
+    "result": {
+        "value": 0
+    }
+  }
+  ```
+
+  - Call "counter" tool to get the counter value
+
+  ```bash
+  curl -X POST http://127.0.0.1:10086/api/counter \
+    --header "Content-Type: application/json" \
+    --data '{
+        "jsonrpc": "2.0",
+        "id": 5,
+        "method": "tools/call",
+        "params": {
+            "name": "counter",
+            "arguments": {
+                "operation": "get_value",
+            }
+        }
+    }'
+  ```
+
+  Response:
+
+  ```json
+  {
+      "id": 5,
+      "jsonrpc": "2.0",
+      "result": {
+          "value": 0
+      }
+  }
+
